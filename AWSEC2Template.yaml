@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  OwnerContact:
+    Type: String
+    Description: Enter the creators email id
+  WorkstationIp:
+    Type: String
+    Description: The IP address of the workstation that can SSH into the instance.
+  KeyName:
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+  InstanceTypeParameter:
+    AllowedValues:
+    - t1.micro
+    - t2.nano
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - m1.small
+    - m1.medium
+    - m1.large
+    - m1.xlarge
+    - m2.xlarge
+    - m2.2xlarge
+    - m2.4xlarge
+    - m3.medium
+    - m3.large
+    - m3.xlarge
+    - m3.2xlarge
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+    - c1.medium
+    - c1.xlarge
+    - c3.large
+    - c3.xlarge
+    - c3.2xlarge
+    - c3.4xlarge
+    - c3.8xlarge
+    - c4.large
+    - c4.xlarge
+    - c4.2xlarge
+    - c4.4xlarge
+    - c4.8xlarge
+    - g2.2xlarge
+    - g2.8xlarge
+    - r3.large
+    - r3.xlarge
+    - r3.2xlarge
+    - r3.4xlarge
+    - r3.8xlarge
+    - i2.xlarge
+    - i2.2xlarge
+    - i2.4xlarge
+    - i2.8xlarge
+    - d2.xlarge
+    - d2.2xlarge
+    - d2.4xlarge
+    - d2.8xlarge
+    - hi1.4xlarge
+    - hs1.8xlarge
+    - cr1.8xlarge
+    - cc2.8xlarge
+    - cg1.4xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+    Default: t2.micro
+    Description: WebServer EC2 instance type
+    Type: String
+Mappings:
+  RegionMap:
+    us-east-1:
+        AMI: ami-047a51fa27710816e 
+    us-west-1:
+        AMI: ami-005c06c6de69aee84
+    eu-west-1:
+        AMI: ami-0fc970315c2d38f01
+    ap-southeast-1:
+        AMI: ami-0e2e44c03b85f58b3
+    ap-northeast-1:
+        AMI: ami-0992fc94ca0f1415a
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: Linux Instance VPC
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-1a
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+  InternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGateway
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref RouteTable
+  SubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref SubnetA
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "Internet Group"
+      GroupDescription: "SSH and web traffic in, all traffic out."
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp:  0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp:  !Sub ${WorkstationIp}/32
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+  ElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Linux
+  Linux:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      SubnetId: !Ref SubnetA
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - AMI
+      InstanceType:
+        Ref: InstanceTypeParameter
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - Ref: InstanceSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+      Tags:
+        -
+          Key: Application
+          Value: Blogging Web Server
+        -
+          Key: Domain
+          Value: AWS
+        -
+          Key: Environment
+          Value: Test
+        -
+          Key: Name
+          Value: Linux Server
+        -
+          Key: OS
+          Value: Linux
+        -
+          Key: OwnerContact
+          Value: !Ref OwnerContact
+        -
+          Key: Source
+          Value: CloudFormation Script 
+      UserData:
+        Fn::Base64: |
+          #cloud-boothook
+          #!/bin/bash
+          echo "Hello World!"
+Outputs:
+  PublicIp:
+    Value:
+      Fn::GetAtt:
+        - Linux
+        - PublicIp
+    Description: Server's PublicIp Address
